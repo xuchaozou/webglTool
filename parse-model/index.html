@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型解析生成工具</title>
+    <script src="./js/three.js"></script>
+    <script src="./js/GLTFLoader.js"></script>
+    <script src="./js/fileSaver.js"></script>
+</head>
+
+<body>
+    <label>
+        定位点名称<input type="text" value="定位点.glb" id="modelName">
+    </label>
+    <label>
+        主模型名称<input type="text" value="" id="mainModelName">
+    </label>
+    <label for="">
+        保存格式<select name="" id="saveType">
+            <option value="max" selected>格式化</option>
+            <option value="min">压缩</option>
+        </select>
+    </label>
+    <label for="">
+        保存json文件名称<input type="text" value="" id="saveModelName" placeholder=""> 
+    </label>
+    <ul id="modelList">
+    </ul>
+    <div>
+        <button id="loadModel">gltf模型分组</button>
+        <button id = "readModel">gltf模型转义</button>
+        <button id="saveModel">保存模型</button>
+    </div>
+</body>
+<script>
+    const data = {
+        modelName: '',
+        tipsPosition: {},
+        children: {}
+    }    
+    let modelList = document.getElementById('modelList')
+
+
+    window.onload = function() {
+        document.getElementById('loadModel').onclick = loadModel
+        document.getElementById('readModel').onclick = readModel
+        document.getElementById('saveModel').onclick = saveModel
+    }
+
+    function readModel () {
+        return
+        let {children} = data
+        modelList.innerHTML = ''
+        let templateStr = ''
+        for(let key in children) {
+            templateStr += `<li data-id="${key}">${key} : <input data-id="${key}" type = "text" placeholder = "${key}"/></li>`
+        }
+        templateStr += `<li data-id="${data.modelName}">${data.modelName} : <input data-id="${data.modelName}" type = "text" placeholder = "${data.modelName}"/></li>`
+        modelList.innerHTML = templateStr
+    }
+
+    function saveModel() {
+        let jsonModelName = document.getElementById('saveModelName').value
+        let _type = document.getElementById('saveType').value
+        let modelToName = {}
+        for(let i = 0; i < modelList.children.length ; i++) {
+            let input = modelList.children[i].lastChild 
+            let modelNameEn = input.dataset.id
+            let value = input.value
+            modelToName[modelNameEn] = value || modelNameEn
+        }
+        // modelToName[]
+        data.modelToName = modelToName
+        saveData(data, jsonModelName, _type)
+    }
+
+    function loadModel() {
+        let loader = new THREE.GLTFLoader()
+        let modelName = document.getElementById('modelName').value
+        let mainModelName = document.getElementById('mainModelName').value
+        data.modelName = mainModelName
+        loader.load(`./model/${modelName}`, gltf => {
+            gltf.scene.traverse(children => {
+                const {
+                    type
+                } = children
+                if (type !== 'Mesh') return
+                const [gltfName, rotation_, scale_, number] = children.name.split('_')
+                if (gltfName == 'tips') return addTips(rotation_, Number(scale_), children, data.tipsPosition)
+                if (!data.children[gltfName]) data.children[gltfName] = []
+                let rotation = parseRotationData(rotation_)
+                let scale = {
+                    x : 1,
+                    y : 1,
+                    z : 1
+                } , _number = number
+                if ( undefined == number ) {
+                    scale = parseScaleData(scale_)
+                    _number = scale_
+                }
+                data.children[gltfName].push({
+                    scale,
+                    rotation,
+                    position: children.position,
+                    number: Number(_number)
+                })
+            })
+
+            for (let key in data.tipsPosition) {
+                data.tipsPosition[key].sort((a, b) => a.number - b.number)
+            }
+            console.log('模型分组完成')
+        })
+    }
+
+    function saveData(data, jsonModelName, _type) {
+        if (_type == 'min') {
+            data = JSON.stringify(data)
+        } else {
+            data = JSON.stringify(data, null, '\t')
+        }
+
+        var blob = new Blob([data], {
+            type: "text/plain;charset=utf-8"
+        });
+        saveAs(blob, jsonModelName + ".json");
+    }
+
+    function addTips(tipName, number, children, tips) {
+        if (!tips[tipName]) {
+            tips[tipName] = [{
+                number,
+                name: children.name,
+                position: children.position,
+            }]
+            return
+        }
+        tips[tipName].push({
+            number,
+            name: children.name,
+            position: children.position,
+        })
+    }
+
+    function parseRotationData(rotation) {
+        let reg1 = /[x|y|z]/
+        let reg = /(x\d+)?(y\d+)?(z\d+)?/
+        let results = rotation.match(reg)
+        let result
+        if (!reg1.test(rotation)) {
+            result = {
+                x: parseRotationAngleData(Number(rotation), 'x'),
+                y: parseRotationAngleData(Number(rotation), 'y'),
+                z: parseRotationAngleData(Number(rotation), 'z')
+            }
+        } else {
+            let x = parseRotationAngleData(results[1], 'x')
+            let z = parseRotationAngleData(results[2], 'z')
+            let y = parseRotationAngleData(results[3], 'y')
+            result = {
+                x,
+                y,
+                z
+            }
+        }
+        return result
+    }
+
+    function parseRotationAngleData(str, direction) {
+        if (!str) return 0
+        let reg = /\d+/
+        let data = Number(reg.exec(str)[0])
+        switch (direction) {
+            case "x":
+                return Math.PI * data / 180
+            case "y":
+                return Math.PI * data / 180
+            case "z":
+                return Math.PI * (360 - data) / 180
+            default:
+                return Math.PI * (360 - data) / 180
+        }
+    }
+
+    function parseScaleData(scale) {
+        let reg1 = /[x|y|z]/
+        let reg = /(x\d+)?(y\d+)?(z\d+)?/
+        let results = scale.match(reg)
+        let result
+        if (!reg1.test(scale)) {
+            result = {
+                x: 1,
+                y: 1,
+                z: 1
+            }
+        } else {
+            let x = parseScaleAngleData(results[1])
+            let y = parseScaleAngleData(results[2])
+            let z = parseScaleAngleData(results[3])
+            result = {
+                x,
+                y,
+                z
+            }
+        }
+        return result
+    }
+
+    function parseScaleAngleData(str) {
+        if (!str) return 1
+        let reg = /\d+/
+        let data = Number(reg.exec(str)[0])
+        return data
+    }
+</script>
+
+</html>
